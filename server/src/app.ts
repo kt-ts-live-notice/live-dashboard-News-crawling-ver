@@ -2,6 +2,7 @@ import type { IncomingMessage, RequestListener, ServerResponse } from 'node:http
 import { createAudioChunkHandler, type AudioChunkHandlerOptions } from './http/audioChunkHandler.js'
 import { AppError, writeProblem } from './http/problem.js'
 import { isValidStationId } from './ws/stationSubscription.js'
+import type { NewsAlertSnapshot } from './newsAlerts.js'
 
 export interface SampleController {
   list(): Promise<string[]>
@@ -12,6 +13,9 @@ export interface SampleController {
 
 export interface AppDependencies extends AudioChunkHandlerOptions {
   samples: SampleController
+  newsAlerts?: {
+    snapshot(): NewsAlertSnapshot
+  }
 }
 
 export function createApp(dependencies: AppDependencies): RequestListener {
@@ -27,6 +31,12 @@ export function createApp(dependencies: AppDependencies): RequestListener {
     if (req.method === 'GET' && url.pathname === '/api/samples') {
       res.setHeader('Content-Type', 'application/json')
       res.end(JSON.stringify({ samples: await dependencies.samples.list(), playing: dependencies.samples.current() }))
+      return
+    }
+    if (req.method === 'GET' && url.pathname === '/api/alerts') {
+      res.setHeader('Content-Type', 'application/json')
+      res.setHeader('Cache-Control', 'no-store')
+      res.end(JSON.stringify(dependencies.newsAlerts?.snapshot() ?? { alerts: [], latest_id: 0 }))
       return
     }
     const sampleAudioMatch = url.pathname.match(/^\/api\/samples\/([\w-]+)\/audio$/)

@@ -45,6 +45,20 @@ interface ServerEvent {
   [key: string]: unknown
 }
 
+interface RealtimeAlert {
+  id: number
+  time: string
+  title: string
+  source: string
+  link: string
+  keyword: string
+}
+
+interface RealtimeAlertSnapshot {
+  alerts: RealtimeAlert[]
+  latest_id: number
+}
+
 interface DemoSample {
   name: string
   title: string
@@ -492,6 +506,192 @@ function ConnectionStatus({
 /* =========================================================
    HEADER
    ========================================================= */
+
+function RealtimeCrawlingPanel() {
+  const [
+    alerts,
+    setAlerts,
+  ] =
+    useState<
+      RealtimeAlert[]
+    >([])
+
+  const [
+    latestId,
+    setLatestId,
+  ] =
+    useState(0)
+
+  const [
+    flashed,
+    setFlashed,
+  ] =
+    useState(false)
+
+  useEffect(() => {
+    let closed = false
+    let previousLatestId = 0
+
+    async function poll() {
+      try {
+        const response =
+          await fetch(
+            '/api/alerts',
+            {
+              cache: 'no-store',
+            },
+          )
+
+        if (!response.ok) {
+          return
+        }
+
+        const snapshot =
+          await response.json() as RealtimeAlertSnapshot
+
+        if (closed) {
+          return
+        }
+
+        setAlerts(
+          snapshot.alerts,
+        )
+
+        setLatestId(
+          snapshot.latest_id,
+        )
+
+        if (
+          previousLatestId !== 0 &&
+          snapshot.latest_id >
+            previousLatestId
+        ) {
+          setFlashed(false)
+          window.requestAnimationFrame(
+            () =>
+              setFlashed(
+                true,
+              ),
+          )
+        }
+
+        previousLatestId =
+          snapshot.latest_id
+      } catch {
+        if (!closed) {
+          setAlerts([])
+        }
+      }
+    }
+
+    void poll()
+
+    const timer =
+      window.setInterval(
+        () => void poll(),
+        3_000,
+      )
+
+    return () => {
+      closed = true
+      window.clearInterval(
+        timer,
+      )
+    }
+  }, [])
+
+  const latest =
+    alerts[0]
+
+  return (
+    <section
+      className={`realtime-crawling-panel ${flashed ? 'has-new-alert' : ''}`}
+      aria-label="실시간 지하철 뉴스 알림"
+    >
+      <div
+        className="realtime-crawling-banner"
+        role="alert"
+        aria-live="polite"
+        aria-atomic="true"
+      >
+        <div
+          className="realtime-crawling-signal"
+          aria-hidden="true"
+        >
+          <span />
+          <strong>
+            !
+          </strong>
+        </div>
+
+        <div className="realtime-crawling-copy">
+          <div className="realtime-crawling-label">
+            <span
+              className="realtime-crawling-dot"
+              aria-hidden="true"
+            />
+            실시간 알림
+          </div>
+
+          <p className="realtime-crawling-title">
+            {latest
+              ? `${latest.title}     [${latest.keyword}] ${latest.title}`
+              : '지하철 시위·사고·고장·지연 소식을 확인하는 중입니다'}
+          </p>
+
+          <p className="realtime-crawling-meta">
+            {latest
+              ? `${latest.time}${latest.source ? ` · ${latest.source}` : ''}`
+              : 'Google News RSS 2분 간격 자동 확인'}
+          </p>
+        </div>
+      </div>
+
+      <div
+        className="realtime-crawling-related"
+        aria-label="크롤링된 관련 뉴스"
+      >
+        {alerts.length ? (
+          alerts.slice(
+            0,
+            4,
+          ).map((alert, index) => (
+            <a
+              key={alert.id}
+              className="realtime-crawling-related-item"
+              href={alert.link}
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              <span className="realtime-crawling-related-index">
+                [{index + 1}]
+              </span>
+
+              <span className="realtime-crawling-related-title">
+                {alert.title}
+              </span>
+
+              <span className="realtime-crawling-related-source">
+                {alert.source || alert.keyword}
+              </span>
+            </a>
+          ))
+        ) : (
+          <div className="realtime-crawling-related-empty">
+            [1] 관련 뉴스를 수집하는 중입니다
+          </div>
+        )}
+      </div>
+
+      <span
+        className="sr-only"
+        aria-live="polite"
+      >
+        최신 알림 번호 {latestId}
+      </span>
+    </section>
+  )
+}
 
 function StationHeader({
   stationName,
@@ -3232,13 +3432,19 @@ export default function App() {
   const station =
     resolveStationPage()
 
-  return station ? (
-    <StationPage
-      station={
-        station
-      }
-    />
-  ) : (
-    <InvalidStationPage />
+  return (
+    <>
+      <RealtimeCrawlingPanel />
+
+      {station ? (
+        <StationPage
+          station={
+            station
+          }
+        />
+      ) : (
+        <InvalidStationPage />
+      )}
+    </>
   )
 }

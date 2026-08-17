@@ -13,6 +13,7 @@ import { AudioChunkSessionManager } from './sessions/audioChunkSessionManager.js
 import { InMemoryResultStore } from './storage/resultStore.js'
 import { createApp, type SampleController } from './app.js'
 import { parseStationSubscription, shouldDeliverToStation } from './ws/stationSubscription.js'
+import { NewsAlertStore } from './newsAlerts.js'
 
 const config = loadConfig()
 const SAMPLES_DIR = join(dirname(fileURLToPath(import.meta.url)), '../../samples')
@@ -105,6 +106,9 @@ const samples: SampleController = {
   },
 }
 
+const newsAlerts = new NewsAlertStore()
+if (process.env.RUN_CRAWLER !== '0') newsAlerts.start()
+
 const resultStore = new InMemoryResultStore()
 const sessions = new AudioChunkSessionManager({
   maxActiveSessions: config.maxActiveSessions,
@@ -135,6 +139,7 @@ const app = createApp({
   sessionManager: sessions,
   requireHttps: config.requireHttps,
   samples,
+  newsAlerts,
 })
 const server = createServer(app)
 server.requestTimeout = config.requestTimeoutMs
@@ -156,6 +161,7 @@ let shuttingDown = false
 async function shutdown(): Promise<void> {
   if (shuttingDown) return
   shuttingDown = true
+  newsAlerts.stop()
   await sessions.shutdown()
   for (const client of wss.clients) client.close()
   await new Promise<void>((resolve) => server.close(() => resolve()))
